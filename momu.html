@@ -1,0 +1,1948 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Momu - 檔案館連動優化版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+            scroll-behavior: smooth;
+        }
+        .gradient-bar {
+            transition: all 0.3s ease-in-out;
+            cursor: pointer;
+            position: relative;
+        }
+        .gradient-bar:hover {
+            filter: brightness(1.2);
+            transform: scaleY(1.1);
+            z-index: 10;
+        }
+        .gradient-bar:hover::after {
+            content: attr(data-date);
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        .tag-btn { transition: all 0.2s; }
+        .tag-btn.active-mood {
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            transform: scale(1.1);
+            font-weight: bold;
+            border: 2px solid currentColor;
+        }
+
+        /* 側邊導航與面板邏輯 */
+        .side-nav-triggers {
+            position: fixed;
+            left: 0;
+            top: 150px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 110; 
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .side-nav-triggers.pushed { transform: translateX(280px); }
+        .nav-trigger-btn {
+            width: 50px; height: 50px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; border-radius: 0 12px 12px 0;
+            box-shadow: 4px 0 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease; cursor: pointer;
+        }
+
+        .info-panel {
+            position: fixed; left: -300px; top: 100px;
+            width: 280px; height: 550px;
+            background: white; z-index: 100;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 0 24px 24px 0;
+            box-shadow: 10px 0 30px rgba(0,0,0,0.1);
+            overflow: hidden; display: flex; flex-direction: column;
+        }
+        .info-panel.active { left: 0; }
+
+        .has-record::after {
+            content: ''; position: absolute; bottom: 4px; left: 50%;
+            transform: translateX(-50%); width: 4px; height: 4px;
+            background-color: #6366f1; border-radius: 50%;
+        }
+        .selected-date {
+            background-color: #e0e7ff; border-radius: 8px;
+            color: #4338ca !important; font-weight: bold;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+
+        .hover-save-trigger { position: relative; }
+        .hover-save-btn {
+            position: absolute;
+            top: 10px; right: 10px;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s ease;
+            z-index: 20;
+        }
+        .hover-save-trigger:hover .hover-save-btn {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        #debugTools {
+            position: fixed; bottom: 20px; left: 20px;
+            display: flex; flex-direction: column; gap: 8px;
+            z-index: 999; background: rgba(255, 255, 255, 0.8);
+            padding: 10px; border-radius: 15px; backdrop-filter: blur(4px);
+            border: 1px solid #e2e8f0;
+        }
+        
+        .stat-bar-container { background: rgba(255,255,255,0.05); height: 6px; border-radius: 3px; overflow: hidden; }
+        .stat-bar-fill { height: 100%; transition: width 0.6s ease; }
+
+        .ai-active-tab { background-color: #ec4899; color: white; border-color: #ec4899; }
+        
+        .nav-link { font-size: 13px; color: #64748b; transition: color 0.2s; cursor: pointer; }
+        .nav-link:hover { color: #4f46e5; }
+
+        /* 檔案館選中效果 */
+        .db-item-active {
+            border-color: #6366f1 !important;
+            background-color: #1e1b4b !important;
+            transform: translateX(4px);
+        }
+
+        /* 核心價值區塊樣式 */
+        .core-section-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #818cf8;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            letter-spacing: 0.05em;
+        }
+        .core-section-title::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: #818cf8;
+            margin-right: 6px;
+            border-radius: 2px;
+        }
+
+        /* 新增：核心價值區塊樣式 - 黃色 (語錄專用) */
+        .core-section-title-amber {
+            font-size: 11px;
+            font-weight: bold;
+            color: #fbbf24;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            letter-spacing: 0.05em;
+        }
+        .core-section-title-amber::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: #fbbf24;
+            margin-right: 6px;
+            border-radius: 2px;
+        }
+        
+        /* A&I 面板標題樣式 - 粉色 */
+        .ai-section-title {
+            font-size: 11px;
+            font-weight: bold;
+            color: #f472b6;
+            margin-bottom: 8px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            letter-spacing: 0.05em;
+        }
+        .ai-section-title::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: #f472b6;
+            margin-right: 6px;
+            border-radius: 2px;
+        }
+
+        .stat-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 10px;
+            color: #cbd5e1;
+        }
+        .stat-label { width: 60px; }
+        .stat-track {
+            flex: 1;
+            height: 4px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 0 8px;
+        }
+        .stat-value {
+            height: 100%;
+            background: #818cf8;
+            border-radius: 2px;
+        }
+        .tag-chip {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 10px;
+            margin: 0 4px 6px 0;
+            border: 1px solid;
+        }
+        .tag-auto {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: #6366f1;
+            color: #a5b4fc;
+        }
+        .tag-manual {
+            background: rgba(236, 72, 153, 0.1);
+            border-color: #ec4899;
+            color: #fbcfe8;
+            position: relative;
+            padding-right: 22px;
+        }
+        .tag-delete {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        .tag-delete:hover { opacity: 1; }
+        
+        /* 檔案館資料夾樣式 */
+        .folder-header {
+            cursor: pointer;
+            user-select: none;
+        }
+        .folder-header:hover { background-color: rgba(255,255,255,0.05); }
+        .folder-content { display: none; }
+        .folder-content.open { display: block; }
+        .folder-arrow { transition: transform 0.2s; }
+        .folder-arrow.open { transform: rotate(90deg); }
+
+        /* 生成內容區塊樣式 - 更新為可編輯 */
+        .generated-content-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px dashed #6366f1;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #e2e8f0;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .generated-content-box:focus {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #818cf8;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        /* 選項框樣式 */
+        .selection-box {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px;
+            margin-bottom: 8px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .checkbox-item {
+            display: flex;
+            align-items: start;
+            gap: 6px;
+            padding: 4px 0;
+            font-size: 10px;
+            color: #cbd5e1;
+            cursor: pointer;
+        }
+        .checkbox-item:hover { color: white; }
+        .checkbox-item input { margin-top: 2px; }
+
+        /* 鎖定按鈕樣式 */
+        .btn-locked {
+            background: #475569 !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+        .btn-unlocked {
+            /* 保留原本的 gradient 樣式 */
+        }
+
+        /* 社群資產選框樣式 */
+        .social-asset-box {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 12px;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+        .social-asset-box:hover {
+            transform: scale(1.02);
+            background: rgba(30, 41, 59, 0.8);
+            border-color: #6366f1;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .social-count {
+            background: #334155;
+            color: #94a3b8;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            font-weight: bold;
+        }
+
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow { animation: spin-slow 8s linear infinite; }
+    </style>
+</head>
+<body class="p-4 md:p-8" ondblclick="closeAllPanels()">
+
+    <!-- Demo Tool -->
+    <div id="debugTools" onclick="event.stopPropagation()">
+        <div class="text-[10px] font-bold text-gray-400 mb-1 px-1 text-center">Demo Tool</div>
+        <button onclick="debugSimulateOneDay()" class="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-bold shadow-lg active:scale-95">🌟 模擬今日數據</button>
+        <button onclick="debugSimulateFullMonth()" class="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-bold shadow-lg active:scale-95">🌙 隨機模擬一月</button>
+    </div>
+
+    <!-- 左側導航入口 -->
+    <div id="sideNavTriggers" class="side-nav-triggers" onclick="event.stopPropagation()">
+        <div onclick="togglePanel(event, 'databasePanel')" class="nav-trigger-btn bg-slate-800" title="心情檔案館">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+        </div>
+        <div onclick="togglePanel(event, 'aiCreationPanel')" class="nav-trigger-btn bg-pink-600" title="A&I 創作">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+        </div>
+    </div>
+
+    <!-- Info Panels -->
+    <!-- 日曆面板 (結構保留以避免報錯) -->
+    <div id="calendarPanel" class="info-panel border-r" onclick="event.stopPropagation()">
+        <div class="p-5 h-full flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h4 class="font-bold text-gray-700">📅 紀錄追蹤</h4>
+                <button onclick="closeAllPanels()" class="text-gray-400">✕</button>
+            </div>
+            <div id="calendarGrid" class="grid grid-cols-7 gap-y-3 text-center text-xs flex-1"></div>
+        </div>
+    </div>
+
+    <div id="databasePanel" class="info-panel bg-slate-900 text-white" onclick="event.stopPropagation()">
+        <div class="p-5 h-full flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h4 class="font-bold text-indigo-300">📁 心情檔案館</h4>
+                <button onclick="closeAllPanels()" class="text-gray-500">✕</button>
+            </div>
+            <div class="flex gap-1 mb-4">
+                <button onclick="switchDatabase(0)" class="flex-1 py-1 text-[9px] bg-slate-800 rounded border border-slate-700 hover:bg-indigo-900 transition-colors">資產</button>
+                <button onclick="switchDatabase(1)" class="flex-1 py-1 text-[9px] bg-slate-800 rounded border border-slate-700 hover:bg-indigo-900 transition-colors">核心</button>
+                <button onclick="switchDatabase(2)" class="flex-1 py-1 text-[9px] bg-slate-800 rounded border border-slate-700 hover:bg-indigo-900 transition-colors">社群</button>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                <div id="dbTypeLabel" class="text-[10px] text-indigo-400 font-bold mb-3 uppercase tracking-widest">載入中...</div>
+                <div id="dbList" class="space-y-3 pb-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="aiCreationPanel" class="info-panel bg-slate-900 text-white" onclick="event.stopPropagation()">
+        <div class="p-5 h-full flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h4 class="font-bold text-pink-400 flex items-center"><span class="mr-2">✨</span>A&I 創作</h4>
+                <button onclick="closeAllPanels()" class="text-gray-500">✕</button>
+            </div>
+            <div class="flex gap-1 mb-4">
+                <button onclick="switchAITab(0)" id="aiTab0" class="flex-1 py-1.5 text-[9px] bg-slate-800 rounded border border-slate-700 transition-all ai-active-tab">心境共振</button>
+                <button onclick="switchAITab(1)" id="aiTab1" class="flex-1 py-1.5 text-[9px] bg-slate-800 rounded border border-slate-700 transition-all">創作清單</button>
+                <button onclick="switchAITab(2)" id="aiTab2" class="flex-1 py-1.5 text-[9px] bg-slate-800 rounded border border-slate-700 transition-all">社群文案</button>
+            </div>
+            <div id="aiContentArea" class="flex-1 overflow-y-auto custom-scrollbar pr-1 relative"></div>
+            
+            <!-- 上傳貼文觸發鍵 (純展示) -->
+            <div id="uploadTriggerContainer" class="hidden absolute bottom-4 left-4 right-4 z-50">
+                <button onclick="alert('【商業模式展示】\n連結至社群平台的 API 接口已觸發！\n用戶可在此一鍵發佈選擇的創作內容。')" class="w-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white text-xs py-3 rounded-xl font-bold shadow-xl border border-white/20 flex items-center justify-center gap-2 transition-all active:scale-95">
+                    <span>☁️</span> 上傳至社群 (預覽)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header Navigation -->
+    <nav class="max-w-4xl mx-auto mb-8 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm">
+        <div class="flex items-center gap-6">
+            <h1 class="text-xl font-bold text-indigo-600">Momu</h1>
+            <div id="historyModeBadge" class="hidden flex items-center bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-[10px] font-bold border border-amber-200">
+                <span class="mr-2" id="historyLabel">🔍 歷史回顧模式</span>
+                <button onclick="resetToToday()" class="underline">回到今日</button>
+            </div>
+        </div>
+        <div class="flex items-center gap-6">
+            <a href="https://gamma.app/docs/Momu-94kqbubvuv9o4ed" target="_blank" class="nav-link">提案簡報</a>
+            <a href="https://drive.google.com/file/d/16dYzVxZ_gzdwKDNZbVcRxm8m8LAsBaHb/view?usp=sharing" target="_blank" class="nav-link">展示影片</a>
+            <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-xs">User</div>
+        </div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-3xl shadow-lg border border-gray-100 relative">
+                <div id="archivePreviewBadge" class="hidden absolute top-4 right-6 bg-indigo-100 text-indigo-600 text-[9px] px-2 py-0.5 rounded-full font-bold animate-pulse">檔案館預覽中</div>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-gray-500 text-sm font-bold">心情總體光譜</h3>
+                    <span id="clickHint" class="text-[10px] text-indigo-400 opacity-60">點擊色塊可跳轉日記</span>
+                </div>
+                <div class="h-16 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner" id="moodSpectrum">
+                    <div class="flex items-center justify-center w-full text-gray-400 text-xs italic">累積 7 天紀錄後生成</div>
+                </div>
+                <div class="mt-4 flex justify-between text-[10px] text-gray-400 font-mono">
+                    <span id="spectrumStart">START</span>
+                    <span id="spectrumEnd">END</span>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-4">
+                <div id="aiReportCard" class="hover-save-trigger bg-white p-5 rounded-3xl shadow-lg border border-indigo-5 flex-[1.5] min-h-[180px] flex flex-col relative overflow-hidden">
+                    <button id="saveToAssetBtn" onclick="saveSummaryToDatabase(0)" class="hover-save-btn bg-indigo-600 text-white text-[10px] px-3 py-1.5 rounded-full font-bold shadow-md hover:bg-indigo-700">儲存週報告</button>
+                    <div class="flex items-center mb-3 justify-between">
+                        <div class="flex items-center">
+                            <span class="bg-indigo-500 text-white text-[10px] px-2 py-1 rounded-md mr-2">AI 深度分析</span>
+                            <h3 class="text-indigo-900 font-bold text-sm">週總評</h3>
+                        </div>
+                    </div>
+                    <div id="aiComment" class="text-gray-600 text-xs leading-relaxed mb-2 overflow-y-auto custom-scrollbar flex-1">請點擊下方「當週心情總評」按鈕開始分析。</div>
+                    <div id="keywordTags" class="mt-auto flex flex-wrap gap-2 py-1"></div>
+                </div>
+
+                <div class="hover-save-trigger bg-white p-5 rounded-3xl shadow-lg border border-amber-50 flex-1 relative overflow-hidden">
+                    <button onclick="saveQuoteToDatabase(1)" class="hover-save-btn bg-amber-500 text-white text-[10px] px-3 py-1.5 rounded-full font-bold shadow-md hover:bg-amber-600">儲存語錄</button>
+                    <div class="flex items-center mb-2">
+                        <span class="bg-amber-400 text-white text-[10px] px-2 py-1 rounded-md mr-2">每日語錄</span>
+                        <h3 class="text-amber-900 font-bold text-sm">聽聽靈感</h3>
+                    </div>
+                    <p id="quoteText" class="text-gray-700 text-xs font-medium italic mb-1">「載入中...」</p>
+                    <p id="quoteAuthor" class="text-right text-[10px] text-gray-400">— 佚名</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="entrySection" class="bg-white p-8 rounded-3xl shadow-xl border-2 border-transparent">
+            <!-- 推薦歌曲結果面板 -->
+            <div id="musicRecommendPanel" class="relative hidden mb-8 bg-slate-900 text-white p-6 rounded-2xl border-l-4 border-indigo-500">
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center animate-spin-slow">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+                        </div>
+                        <h4 class="text-indigo-400 font-bold text-sm">今日心境推薦音樂</h4>
+                    </div>
+                    <button onclick="document.getElementById('musicRecommendPanel').classList.add('hidden')" class="text-slate-500 hover:text-white">✕</button>
+                </div>
+                <div id="musicContent" class="space-y-2">
+                    <div class="text-lg font-bold text-white tracking-wide" id="songName">---</div>
+                    <div class="text-xs text-slate-400 mb-2" id="artistName">---</div>
+                    <div class="text-[11px] bg-slate-800 p-3 rounded-lg border border-slate-700 leading-relaxed text-slate-300 italic" id="recommendReason">---</div>
+                </div>
+                
+                <!-- Action Group: Save & Feedback -->
+                <div class="absolute top-4 right-10 flex flex-col items-end gap-2">
+                    <button onclick="saveMusicToAsset()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] px-3 py-1.5 rounded-full font-bold shadow-md transition-all active:scale-95 flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd" />
+                        </svg>
+                        儲存至心境共振
+                    </button>
+                    <div class="flex gap-2 bg-slate-800/50 p-1 rounded-full backdrop-blur-sm">
+                        <button onclick="toggleMusicFeedback(this, 'like')" class="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 text-slate-400 transition-colors text-xs" title="喜歡">👍</button>
+                        <button onclick="toggleMusicFeedback(this, 'dislike')" class="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 text-slate-400 transition-colors text-xs" title="不喜歡">👎</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mb-10">
+                <h2 id="entryTitle" class="text-lg font-bold text-gray-800 mb-6">今日日記紀錄</h2>
+                
+                <div class="flex flex-wrap justify-center gap-2 mb-6" id="moodGroup">
+                    <button onclick="selectMood('喜', '#f87171', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#f87171]">喜</button>
+                    <button onclick="selectMood('被愛', '#f472b6', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#f472b6]">被愛</button>
+                    <button onclick="selectMood('嚮往', '#fbbf24', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#fbbf24]">嚮往</button>
+                    <button onclick="selectMood('欲望', '#a78bfa', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#a78bfa]">欲望</button>
+                    <button onclick="selectMood('怒', '#fb923c', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#fb923c]">怒</button>
+                    <button onclick="selectMood('哀', '#60a5fa', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#60a5fa]">哀</button>
+                    <button onclick="selectMood('無人理解', '#94a3b8', this)" class="tag-btn px-4 py-2 rounded-full text-white text-sm bg-[#94a3b8]">無人理解</button>
+                </div>
+
+                <div class="flex flex-wrap justify-center gap-2 mb-6" id="eventGroup">
+                    <button onclick="selectEvent('健康', this)" class="tag-btn px-4 py-2 rounded-full border border-green-200 text-green-600 text-sm">健康</button>
+                    <button onclick="selectEvent('人際', this)" class="tag-btn px-4 py-2 rounded-full border border-blue-200 text-blue-600 text-sm">人際</button>
+                    <button onclick="selectEvent('事業/學業', this)" class="tag-btn px-4 py-2 rounded-full border border-indigo-200 text-indigo-600 text-sm">事業/學業</button>
+                    <button onclick="selectEvent('成長/成就', this)" class="tag-btn px-4 py-2 rounded-full border border-yellow-200 text-yellow-600 text-sm">成長/成就</button>
+                    <button onclick="selectEvent('興趣/創作', this)" class="tag-btn px-4 py-2 rounded-full border border-purple-200 text-purple-600 text-sm">興趣/創作</button>
+                    <button onclick="selectEvent('生活雜項', this)" class="tag-btn px-4 py-2 rounded-full border border-gray-200 text-gray-600 text-sm">生活雜項</button>
+                    <button onclick="selectEvent('價值/信念', this)" class="tag-btn px-4 py-2 rounded-full border border-rose-200 text-rose-600 text-sm">價值/信念</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 text-left">
+                    <div class="md:col-span-2">
+                        <textarea id="diaryInput" class="w-full h-40 p-4 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-400 outline-none" placeholder="今天發生了什麼事？..."></textarea>
+                    </div>
+                    <div class="bg-slate-50 p-4 rounded-2xl border flex flex-col justify-center">
+                        <label class="text-[10px] text-slate-400 mb-1">紀錄日期</label>
+                        <input type="date" id="recordDate" class="w-full p-2 rounded-lg text-sm" onchange="loadEntryByDate(this.value)">
+                    </div>
+                </div>
+                
+                <button onclick="saveCurrentEntry()" id="mainSaveBtn" class="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold mb-1">確認儲存紀錄</button>
+                <div id="entryCountLabel" class="text-center text-[10px] text-gray-400 mb-4">目前已累積 0 天日記紀錄</div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="recommendMusic()" class="py-4 bg-gray-800 text-white rounded-2xl font-bold flex items-center justify-center gap-2">
+                    專屬心境音樂
+                </button>
+                <button onclick="analyzeWeeklyMood()" id="analysisBtn" class="py-4 bg-indigo-100 text-indigo-600 rounded-2xl font-bold">當週心情總評</button>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-black text-white px-6 py-3 rounded-full text-sm opacity-0 transition-opacity z-[120] pointer-events-none"></div>
+
+    <script>
+        let diaryEntries = JSON.parse(localStorage.getItem('soul_spectrum_entries')) || {};
+        let databases = JSON.parse(localStorage.getItem('soul_spectrum_db')) || { 
+            currentIdx: 0, 
+            types: ["心情資產", "核心價值", "社群資產"], 
+            storage: [[], [], []] 
+        };
+        // Ensure types are updated if loading from old local storage
+        databases.types = ["心情資產", "核心價值", "社群資產"];
+
+        let creationRecords = JSON.parse(localStorage.getItem('soul_spectrum_creations')) || [];
+        let copywritingRecords = JSON.parse(localStorage.getItem('soul_spectrum_copywriting')) || [];
+        let energyAssets = JSON.parse(localStorage.getItem('soul_spectrum_energy_assets')) || [];
+
+        // Global variable to store current generated keywords for selection
+        let currentKeywords = [];
+        // Global to store stable weekly analysis
+        let savedWeeklyAnalysis = JSON.parse(localStorage.getItem('soul_spectrum_weekly_analysis')) || { keywords: [] };
+
+        const moodConfig = { '喜': '#f87171', '被愛': '#f472b6', '嚮往': '#fbbf24', '欲望': '#a78bfa', '怒': '#fb923c', '哀': '#60a5fa', '無人理解': '#94a3b8' };
+        
+        // Comprehensive Keyword Library for Real Extraction
+        const keywordLibrary = [
+            "成長", "挑戰", "平靜", "感恩", "焦慮", "突破", "溫暖", "堅持", "迷惘", "釋懷", "期待", "失望", "勇氣", "孤獨", "連結",
+            "成就感", "壓力", "放鬆", "思考", "改變", "習慣", "目標", "夢想", "現實", "溝通", "誤會", "原諒", "自省", "快樂", "悲傷",
+            "憤怒", "接受", "拒絕", "嘗試", "失敗", "成功", "學習", "閱讀", "運動", "健康", "朋友", "家人", "工作", "未來", "回憶",
+            "時間", "珍惜", "後悔", "自信", "懷疑", "平衡", "混亂", "清晰", "簡單", "複雜", "創造", "毀滅", "開始", "結束"
+        ];
+
+        // 模擬真人日記內容庫
+        const diarySentences = {
+            positive: [
+                "今天和老朋友聚會，感覺真的很溫暖，聊了很多以前的趣事。",
+                "終於完成了那個專案，雖然很累但是成就感滿滿！",
+                "早起看到窗外的陽光，心情突然變得很開闊。",
+                "讀到一本好書，裡面的觀點讓我對未來充滿期待。",
+                "去運動流了一身汗，感覺壓力和煩惱都隨著汗水排掉了。",
+                "家人特地為我準備了晚餐，這種被愛的感覺真好。"
+            ],
+            negative: [
+                "今天工作上遇到了一些不順利，覺得自己是不是能力不足。",
+                "和朋友有些誤會，心裡總是悶悶的，不知道該怎麼開口解釋。",
+                "外面下著大雨，哪裡都不能去，心情也跟著灰暗起來。",
+                "感覺大家都不能理解我的想法，這種孤獨感有時候很沈重。",
+                "莫名其妙感到很煩躁，對什麼事情都提不起勁。",
+                "今天又失眠了，腦袋裡轉著一堆沒意義的擔憂。"
+            ]
+        };
+
+        const quoteBank = [
+            { text: "「所有的痛苦都是人生成長的養分。」", author: "蘇格拉底" },
+            { text: "「生活不是等待暴風雨過去，而是學會在雨中跳舞。」", author: "薇薇安·葛林" },
+            { text: "「每個不曾起舞的日子，都是對生命的辜負。」", author: "尼采" },
+            { text: "「既然選擇了遠方，便只顧風雨兼程。」", author: "汪國真" },
+            { text: "「世界以痛吻我，要我報之以歌。」", author: "泰戈爾" }
+        ];
+
+        const musicBank = {
+            '喜': [{ song: "Happy", artist: "Pharrell Williams", reason: "旋律與您的快樂共振，放大這份陽光感。" }],
+            '哀': [{ song: "Fix You", artist: "Coldplay", reason: "在低落時承接您的憂傷，轉化為前進的力量。" }],
+            '怒': [{ song: "Believer", artist: "Imagine Dragons", reason: "將憤怒轉化為強大的生命力與信念。" }],
+            '無人理解': [{ song: "Space Oddity", artist: "David Bowie", reason: "孤獨是本質，陪您在內心世界安靜航行。" }]
+        };
+
+        let currentMood = null, currentColor = null, currentEvent = null, activeArchiveId = null;
+
+        // --- Core Helper Functions (Defined before usage) ---
+        
+        function loadEntryByDate(date) {
+            const entry = diaryEntries[date];
+            document.getElementById('recordDate').value = date; // Update date input
+            
+            if (entry) {
+                document.getElementById('diaryInput').value = entry.text;
+                selectMood(entry.mood, entry.color, Array.from(document.querySelectorAll('#moodGroup button')).find(b => b.innerText === entry.mood));
+                if(entry.event) {
+                    const evtBtn = Array.from(document.querySelectorAll('#eventGroup button')).find(b => b.innerText === entry.event);
+                    if(evtBtn) selectEvent(entry.event, evtBtn);
+                }
+            } else {
+                document.getElementById('diaryInput').value = "";
+                // Reset mood/event visual selection
+                document.querySelectorAll('.active-mood').forEach(el => el.classList.remove('active-mood'));
+                document.querySelectorAll('#eventGroup button').forEach(el => el.classList.remove('bg-indigo-600', 'text-white'));
+            }
+            showToast(`已切換至 ${date}`);
+            
+            // KEY UPDATE 1: Trigger specific week analysis when loading an entry
+            analyzeWeeklyMood(date); 
+            // KEY UPDATE 2: Update spectrum to center on this date
+            generateSpectrum(date); 
+        }
+
+        function generateSpectrum(anchorDate = null) {
+            const spec = document.getElementById('moodSpectrum');
+            if(!spec) return;
+            
+            // Logic to handle anchorDate window
+            let entries = Object.values(diaryEntries);
+            entries.sort((a,b) => new Date(a.date) - new Date(b.date));
+            
+            if (entries.length === 0) return;
+
+            let displayEntries = [];
+            if (anchorDate) {
+                // Get the start of the week for anchorDate
+                const d = new Date(anchorDate);
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1) - 1; // Adjust to Monday start or Sunday? Let's use standard Sunday start logic for visual
+                // Actually, let's just show 7 days surrounding or ending at date
+                // Simplified: Show 6 days before + current day
+                const anchorTime = new Date(anchorDate).getTime();
+                const pastEntries = entries.filter(e => new Date(e.date).getTime() <= anchorTime);
+                displayEntries = pastEntries.slice(-7);
+            } else {
+                displayEntries = entries.slice(-7);
+            }
+
+            spec.innerHTML = displayEntries.map(e => 
+                `<div class="flex-1 h-full gradient-bar" style="background:${e.color}" data-date="${e.date}" onclick="loadEntryByDate('${e.date}'); event.stopPropagation();"></div>`
+            ).join('');
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('calendarGrid');
+            if (!grid) return; 
+            grid.innerHTML = "<div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>";
+            for(let i=1; i<=31; i++) {
+                const dateKey = `2026-01-${String(i).padStart(2,'0')}`;
+                grid.innerHTML += `<div class="p-1 ${diaryEntries[dateKey] ? 'text-indigo-600 font-bold' : 'text-gray-300'}">${i}</div>`;
+            }
+        }
+
+        function resetToToday() {
+            const today = new Date().toISOString().split('T')[0];
+            const dateInput = document.getElementById('recordDate');
+            if (dateInput) dateInput.value = today;
+            generateSpectrum(); 
+            renderCalendar();
+            // Also analyze current week on reset
+            analyzeWeeklyMood(); 
+        }
+
+        function extractRealKeywords(text) {
+            if (!text) return [];
+            
+            const counts = {};
+            keywordLibrary.forEach(word => {
+                const regex = new RegExp(word, 'g');
+                const matches = text.match(regex);
+                if (matches) {
+                    counts[word] = matches.length;
+                }
+            });
+
+            let sortedWords = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+            
+            if (sortedWords.length > 0) {
+                return sortedWords.slice(0, 4).map(w => w[0]);
+            }
+
+            let hash = 0;
+            for (let i = 0; i < text.length; i++) {
+                hash = text.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const count = Math.min(4, keywordLibrary.length);
+            const result = [];
+            for (let i = 0; i < count; i++) {
+                const index = Math.abs(hash + i * 13) % keywordLibrary.length;
+                result.push(keywordLibrary[index]);
+            }
+            return result;
+        }
+
+        function simulateKeywordExtraction(text) {
+            return extractRealKeywords(text);
+        }
+
+        function showToast(m) {
+            const t = document.getElementById('toast'); 
+            if(t) {
+                t.innerText = m; t.style.opacity = '1';
+                setTimeout(() => t.style.opacity = '0', 2000);
+            }
+        }
+
+        function updateEntryCount() {
+            const count = Object.keys(diaryEntries).length;
+            const el = document.getElementById('entryCountLabel');
+            if (el) el.innerText = `目前已累積 ${count} 天日記紀錄`;
+        }
+
+        function switchAITab(index) {
+            [0, 1, 2].forEach(i => {
+                const btn = document.getElementById(`aiTab${i}`);
+                if (btn) {
+                    if (i === index) {
+                        btn.classList.add('ai-active-tab');
+                        btn.classList.remove('bg-slate-800');
+                    } else {
+                        btn.classList.remove('ai-active-tab');
+                        btn.classList.add('bg-slate-800');
+                    }
+                }
+            });
+
+            const contentArea = document.getElementById('aiContentArea');
+            if (!contentArea) return;
+            contentArea.innerHTML = ''; 
+            
+            // Hide upload button by default when switching tabs
+            const uploadBtn = document.getElementById('uploadTriggerContainer');
+            if (uploadBtn) uploadBtn.classList.add('hidden');
+
+            if (index === 0) { 
+                 // Combined View for Music Resonance (Tracks + Creations + Copywriting)
+                 renderMusicResonancePanel(contentArea);
+            } else if (index === 1) { 
+                // Creation List Tab - Music Generator
+                renderMusicCreationPanel(contentArea);
+            } else if (index === 2) { 
+                // New: Social Copywriting Tab (Moved from Archive)
+                renderCopywritingPanel(contentArea);
+            } 
+        }
+
+        function toggleUploadButton() {
+            // Check if any radio button in aiContentArea is checked
+            const contentArea = document.getElementById('aiContentArea');
+            const selected = contentArea.querySelector('input[name="uploadItem"]:checked');
+            const uploadBtn = document.getElementById('uploadTriggerContainer');
+            
+            if (selected) {
+                uploadBtn.classList.remove('hidden');
+            } else {
+                uploadBtn.classList.add('hidden');
+            }
+        }
+
+        // New function to handle music feedback toggle (visual only)
+        function toggleMusicFeedback(btn, type) {
+             const parent = btn.parentElement;
+             const buttons = parent.querySelectorAll('button');
+             
+             // Check if already active to toggle off
+             const isActive = type === 'like' ? btn.classList.contains('text-pink-400') : btn.classList.contains('text-indigo-400');
+             
+             // Reset all
+             buttons.forEach(b => {
+                 b.classList.remove('text-pink-400', 'text-indigo-400', 'font-bold', 'bg-white/10');
+                 b.classList.add('text-slate-400');
+             });
+             
+             if (!isActive) {
+                 btn.classList.remove('text-slate-400');
+                 btn.classList.add(type === 'like' ? 'text-pink-400' : 'text-indigo-400', 'font-bold', 'bg-white/10');
+                 showToast(type === 'like' ? "已按讚：將推薦更多類似風格" : "已回饋：將減少推薦此類風格");
+             }
+        }
+
+        // --- Main Init ---
+
+        window.onload = function() {
+            resetToToday();
+            
+            // Initial Quote
+            refreshQuote();
+            
+            // Initial Analysis
+            analyzeWeeklyMood();
+
+            updateDatabaseUI();
+            updateEntryCount();
+            switchAITab(0); 
+        };
+
+        // --- Other Functions ---
+
+        function togglePanel(event, id) {
+            event.stopPropagation();
+            const panel = document.getElementById(id);
+            const isActive = panel.classList.contains('active');
+            closeAllPanels();
+            if (!isActive) { 
+                panel.classList.add('active'); 
+                document.getElementById('sideNavTriggers').classList.add('pushed');
+            }
+        }
+
+        function closeAllPanels() {
+            document.querySelectorAll('.info-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('sideNavTriggers').classList.remove('pushed');
+        }
+
+        function switchDatabase(idx) {
+            databases.currentIdx = idx;
+            updateDatabaseUI();
+            showToast(`切換：${databases.types[idx]}`);
+        }
+
+        function updateDatabaseUI() {
+            const list = document.getElementById('dbList');
+            document.getElementById('dbTypeLabel').innerText = databases.types[databases.currentIdx];
+            
+            if (databases.currentIdx === 0) {
+                renderAssetsFolderStructure();
+                return;
+            }
+            if (databases.currentIdx === 1) {
+                renderInspirationPanel();
+                return;
+            }
+            // New Tab: Community Assets (Mockup)
+            if (databases.currentIdx === 2) {
+                renderCommunityAssetsPanel();
+                return;
+            }
+
+            let data = databases.storage[databases.currentIdx];
+            if (!data || data.length === 0) { list.innerHTML = `<div class="text-[10px] text-slate-500 py-10 text-center">暫無存檔</div>`; return; }
+            list.innerHTML = data.map(item => `
+                <div class="bg-slate-800 p-3 rounded-xl border border-slate-700 mb-2">
+                    <div class="text-[10px] text-indigo-400 font-bold mb-1">${item.date || item.startDate || ''}</div>
+                    <div class="text-[11px] text-slate-200 line-clamp-2">${item.text || item.type || ''}</div>
+                </div>
+            `).join('');
+        }
+
+        // --- NEW: Community Assets Panel (Mockup) ---
+        function renderCommunityAssetsPanel() {
+            const list = document.getElementById('dbList');
+            
+            // Define Standard 7 Types
+            const standardTypes = ['健康', '人際', '事業/學業', '成長/成就', '興趣/創作', '生活雜項', '價值/信念'];
+            
+            // Retrieve custom assets (Stored in databases.storage[2] if any)
+            if (!Array.isArray(databases.storage[2])) {
+                databases.storage[2] = [];
+            }
+            const customAssets = databases.storage[2].filter(item => item.isCustomAsset); // Filter to ensure we only get our custom assets
+
+            let html = '<div class="space-y-3 pb-4">';
+
+            // 1. Standard 7 Boxes (Static Mockup)
+            standardTypes.forEach(type => {
+                html += `
+                    <div class="social-asset-box">
+                        <div class="text-xs font-bold text-slate-200">${type}</div>
+                        <div class="social-count">0</div>
+                    </div>
+                `;
+            });
+
+            // 2. Custom Boxes
+            customAssets.forEach((asset, index) => {
+                html += `
+                    <div class="social-asset-box group relative">
+                        <div class="text-xs font-bold text-indigo-300">${asset.name}</div>
+                        <div class="social-count">0</div>
+                        <button onclick="deleteCommunityAsset(${index})" class="absolute -top-2 -right-2 bg-rose-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                    </div>
+                `;
+            });
+
+            // 3. Add Custom Box Input
+            html += `
+                <div class="mt-4 pt-4 border-t border-slate-700">
+                    <div class="text-[10px] font-bold text-indigo-400 mb-2">自訂社群資產庫</div>
+                    <div class="flex gap-2">
+                        <input type="text" id="customAssetInput" placeholder="輸入名稱..." 
+                            class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500">
+                        <button onclick="addCommunityAsset()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 rounded-lg font-bold transition-colors">
+                            新增
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            html += '</div>';
+            list.innerHTML = html;
+        }
+
+        function addCommunityAsset() {
+            const input = document.getElementById('customAssetInput');
+            const name = input.value.trim();
+            if (!name) return;
+            
+            // Push new custom asset to storage[2]
+            databases.storage[2].push({ name: name, count: 0, isCustomAsset: true });
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            
+            renderCommunityAssetsPanel(); // Refresh UI
+        }
+
+        function deleteCommunityAsset(index) {
+            const customAssets = databases.storage[2].filter(item => item.isCustomAsset);
+            const itemToRemove = customAssets[index];
+            const mainIndex = databases.storage[2].indexOf(itemToRemove);
+            
+            if (mainIndex > -1) {
+                databases.storage[2].splice(mainIndex, 1);
+                localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+                renderCommunityAssetsPanel();
+            }
+        }
+
+
+        function renderCopywritingPanel(contentArea) {
+            const list = document.getElementById('dbList');
+            const quotes = databases.storage[1] || [];
+            
+            // Sync Core Value Custom Tags here as well
+            const keywords = currentKeywords; // Always use current filtered analysis
+            const manualTags = databases.storage[2] ? databases.storage[2].filter(t => t.type === 'core_tag') : [];
+            const displayKeywords = [...keywords, ...manualTags.map(t => t.text)]; // Combine for Step 2
+
+            let html = `
+                <div class="space-y-4 pt-2">
+                    <div>
+                        <div class="core-section-title text-indigo-300">步驟 1：選擇靈感 (語錄)</div>
+                        <div class="selection-box custom-scrollbar">
+                            ${quotes.length > 0 ? quotes.map((q, i) => `
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="copyQuote" value="${q.text.replace(/"/g, '&quot;')}" onchange="updateCreativeAnalysis('copy')">
+                                    <span class="truncate">${q.text}</span>
+                                </label>
+                            `).join('') : '<div class="text-slate-500 text-[10px] text-center">尚無語錄，請至「核心價值」新增</div>'}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="core-section-title text-indigo-300">步驟 2：選擇關鍵字 (AI + 自訂)</div>
+                        <div class="selection-box custom-scrollbar">
+                            ${displayKeywords.length > 0 ? displayKeywords.map((k, i) => `
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="copyKw" value="${k}" onchange="updateCreativeAnalysis('copy')">
+                                    <span class="${manualTags.some(t => t.text === k) ? 'text-amber-400' : ''}">#${k}</span>
+                                </label>
+                            `).join('') : '<div class="text-slate-500 text-[10px] text-center">尚無關鍵字，請生成週總評或新增目標</div>'}
+                        </div>
+                    </div>
+                    <div id="copyAnalysisArea" class="bg-indigo-900/30 p-3 rounded-xl border border-indigo-500/30 text-xs min-h-[60px] flex items-center justify-center text-slate-400 italic">
+                        請勾選上方素材以啟動 AI 分析...
+                    </div>
+                    <button id="btnGenerateCopy" onclick="generateCopywriting()" class="w-full bg-gray-400 text-gray-200 py-3 rounded-xl font-bold shadow-none cursor-not-allowed transition-all text-xs flex items-center justify-center gap-2 btn-locked">
+                        <span>✨</span> 生成社群貼文
+                    </button>
+                    <div id="copywritingOutput" class="hidden">
+                        <div class="core-section-title mt-4 text-indigo-300">AI 建議文案</div>
+                        <div id="copywritingText" class="generated-content-box outline-none focus:border-indigo-400 transition-colors border-indigo-500/50" contenteditable="true" title="點擊內容可修改"></div>
+                        <div class="flex justify-end mt-2">
+                            <button onclick="saveCopywritingCreation()" class="w-full mt-3 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded-lg font-bold transition-colors">
+                                💾 儲存至社群文案庫
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            contentArea.innerHTML = html;
+        }
+
+        // --- AI Panel Tab 0: Music Resonance (Combined View) ---
+        function renderMusicResonancePanel(contentArea) {
+             let html = '';
+             
+             // Section 1: Saved Music (energyAssets)
+             html += `<div class="ai-section-title">🎵 收藏音樂</div>`;
+             if (!energyAssets || energyAssets.length === 0) {
+                 html += '<div class="text-xs text-gray-400 text-center mb-4">尚無收藏音樂</div>';
+             } else {
+                 html += generateCollapsibleList(energyAssets, 'bg-slate-800', 'border-slate-700', 'text-pink-400');
+             }
+
+             // Section 2: Creation Records (creationRecords)
+             html += `<div class="ai-section-title text-rose-400">🎹 創作記錄</div>`;
+             if (!creationRecords || creationRecords.length === 0) {
+                 html += '<div class="text-xs text-gray-400 text-center mb-4">尚無創作記錄</div>';
+             } else {
+                 html += generateCollapsibleList(creationRecords, 'bg-slate-800', 'border-slate-700', 'text-rose-400');
+             }
+
+             // Section 3: Social Copywriting Records (copywritingRecords)
+             html += `<div class="ai-section-title text-indigo-400">📝 社群文案</div>`;
+             if (!copywritingRecords || copywritingRecords.length === 0) {
+                 html += '<div class="text-xs text-gray-400 text-center mb-4">尚無社群文案</div>';
+             } else {
+                 html += generateCollapsibleList(copywritingRecords, 'bg-slate-800', 'border-slate-700', 'text-indigo-400');
+             }
+             
+             contentArea.innerHTML = html;
+        }
+
+        // Helper to generate collapsible list by month
+        function generateCollapsibleList(data, bgClass, borderClass, textClass) {
+            const groups = {};
+            data.forEach(item => {
+                const date = new Date(item.date);
+                const monthKey = `${date.getFullYear()}年${date.getMonth() + 1}月`;
+                if (!groups[monthKey]) groups[monthKey] = [];
+                groups[monthKey].push(item);
+            });
+
+            let html = '<div class="space-y-2 mb-4">';
+            for (const month in groups) {
+                html += `
+                    <div class="mb-1">
+                        <div class="folder-header ${bgClass} p-2 rounded text-xs ${textClass} font-bold flex justify-between items-center border ${borderClass}" onclick="toggleFolder(this)">
+                            ${month} (${groups[month].length})
+                            <span class="folder-arrow">▶</span>
+                        </div>
+                        <div class="folder-content pl-1 mt-1 space-y-2">
+                            ${groups[month].map(item => `
+                                <div class="bg-slate-700/50 p-2 rounded border border-slate-600/50 flex gap-2 items-start">
+                                    <input type="radio" name="uploadItem" class="mt-1 accent-indigo-500" onchange="toggleUploadButton()">
+                                    <div class="flex-1">
+                                        <div class="text-[9px] text-slate-400 mb-1 text-right">${item.date}</div>
+                                        <div class="text-[11px] text-gray-300 whitespace-pre-wrap leading-relaxed">${item.text}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function toggleUploadButton() {
+            const contentArea = document.getElementById('aiContentArea');
+            const selected = contentArea.querySelector('input[name="uploadItem"]:checked');
+            const uploadBtn = document.getElementById('uploadTriggerContainer');
+            
+            if (selected) {
+                uploadBtn.classList.remove('hidden');
+            } else {
+                uploadBtn.classList.add('hidden');
+            }
+        }
+
+        function renderMusicCreationPanel(contentArea) {
+            const quotes = databases.storage[1] || [];
+            
+            // FIX: Manual Tags integration for Music Creation Step 2 (Fixed)
+            const keywords = currentKeywords; // Always use current week filtered analysis
+            const manualTags = databases.storage[2] ? databases.storage[2].filter(t => t.type === 'core_tag') : [];
+            const displayKeywords = [...keywords, ...manualTags.map(t => t.text)]; // Combined list
+            
+            const musicTracks = energyAssets || []; // From saved music
+
+            let html = `
+                <div class="space-y-4 pt-2">
+                    <div>
+                        <div class="core-section-title text-pink-300">步驟 1：選擇靈感 (語錄)</div>
+                        <div class="selection-box custom-scrollbar">
+                            ${quotes.length > 0 ? quotes.map((q, i) => `
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="musicQuote" value="${q.text.replace(/"/g, '&quot;')}" onchange="updateCreativeAnalysis('music')">
+                                    <span class="truncate">${q.text}</span>
+                                </label>
+                            `).join('') : '<div class="text-slate-500 text-[10px] text-center">尚無語錄</div>'}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="core-section-title text-pink-300">步驟 2：選擇關鍵字 (AI + 自訂)</div>
+                        <div class="selection-box custom-scrollbar">
+                            ${displayKeywords.length > 0 ? displayKeywords.map((k, i) => `
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="musicKw" value="${k}" onchange="updateCreativeAnalysis('music')">
+                                    <span class="${manualTags.some(t => t.text === k) ? 'text-amber-400' : ''}">#${k}</span>
+                                </label>
+                            `).join('') : '<div class="text-slate-500 text-[10px] text-center">尚無關鍵字</div>'}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="core-section-title text-pink-300">步驟 3：選擇收藏音樂 (選填)</div>
+                        <div class="selection-box custom-scrollbar">
+                            ${musicTracks.length > 0 ? musicTracks.map((m, i) => `
+                                <label class="checkbox-item">
+                                    <input type="checkbox" name="musicTrack" value="${m.text}" onchange="updateCreativeAnalysis('music')">
+                                    <span class="truncate">${m.text}</span>
+                                </label>
+                            `).join('') : '<div class="text-slate-500 text-[10px] text-center">尚無收藏音樂</div>'}
+                        </div>
+                    </div>
+                    <div id="musicAnalysisArea" class="bg-pink-900/20 p-3 rounded-xl border border-pink-500/30 text-xs min-h-[60px] flex items-center justify-center text-slate-400 italic">
+                        請勾選上方素材以啟動 AI 音樂分析...
+                    </div>
+                    <button id="btnGenerateMusic" onclick="generateMusicLyrics()" class="w-full bg-gray-400 text-gray-200 py-3 rounded-xl font-bold shadow-none cursor-not-allowed transition-all text-xs flex items-center justify-center gap-2 btn-locked">
+                        <span>🎹</span> 生成主歌橋段
+                    </button>
+                    <div id="musicOutput" class="hidden">
+                        <div class="core-section-title mt-4 text-pink-400">AI 詞曲靈感</div>
+                        <div id="musicText" class="generated-content-box border-pink-500/50 outline-none focus:border-pink-400 transition-colors" contenteditable="true" title="點擊內容可修改"></div>
+                        <button onclick="saveMusicCreation()" class="w-full mt-3 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded-lg font-bold transition-colors">
+                            💾 儲存至心境共振
+                        </button>
+                    </div>
+                </div>
+            `;
+            contentArea.innerHTML = html;
+        }
+
+        function updateCreativeAnalysis(type) {
+            const prefix = type === 'copy' ? 'copy' : 'music';
+            const area = document.getElementById(`${prefix}AnalysisArea`);
+            const btnId = type === 'copy' ? 'btnGenerateCopy' : 'btnGenerateMusic';
+            const btn = document.getElementById(btnId);
+            
+            const selectedQuotes = Array.from(document.querySelectorAll(`input[name="${prefix}Quote"]:checked`)).map(cb => cb.value);
+            const selectedKws = Array.from(document.querySelectorAll(`input[name="${prefix}Kw"]:checked`)).map(cb => cb.value);
+            
+            let selectedMusic = [];
+            if (type === 'music') {
+                selectedMusic = Array.from(document.querySelectorAll(`input[name="musicTrack"]:checked`)).map(cb => cb.value);
+            }
+
+            // Validation Lock Logic
+            if (selectedQuotes.length === 0 || selectedKws.length === 0) {
+                // Locked State
+                area.innerHTML = '請勾選上方素材以啟動 AI 分析...';
+                area.classList.add('flex', 'items-center', 'justify-center', 'italic', 'text-slate-400');
+                area.classList.remove('block');
+                
+                // Button Styling
+                if(btn) {
+                    btn.classList.add('bg-gray-400', 'text-gray-200', 'cursor-not-allowed', 'shadow-none', 'btn-locked');
+                    btn.classList.remove('bg-gradient-to-r', 'from-indigo-600', 'to-purple-600', 'hover:from-indigo-500', 'hover:to-purple-500', 'shadow-lg', 'active:scale-95', 'text-white', 'from-pink-600', 'to-rose-600', 'hover:from-pink-500', 'hover:to-rose-500');
+                }
+                return;
+            }
+
+            // Unlocked State
+            area.classList.remove('flex', 'items-center', 'justify-center', 'italic', 'text-slate-400');
+            area.classList.add('block');
+            
+            if(btn) {
+                btn.classList.remove('bg-gray-400', 'text-gray-200', 'cursor-not-allowed', 'shadow-none', 'btn-locked');
+                btn.classList.add('bg-gradient-to-r', 'shadow-lg', 'active:scale-95', 'text-white');
+                if(type === 'copy') {
+                    btn.classList.add('from-indigo-600', 'to-purple-600', 'hover:from-indigo-500', 'hover:to-purple-500');
+                } else {
+                    btn.classList.add('from-pink-600', 'to-rose-600', 'hover:from-pink-500', 'hover:to-rose-500');
+                }
+            }
+
+            let tone = "平穩";
+            if (selectedKws.some(k => ['焦慮','挑戰','堅持'].includes(k))) tone = "勵志/突破";
+            if (selectedKws.some(k => ['感恩','溫暖','平靜'].includes(k))) tone = "療癒/溫柔";
+            
+            let content = "";
+            if (type === 'copy') {
+                content = `<div class="text-indigo-300 font-bold mb-1">🧬 文案預測模型：</div>
+                           <div class="text-slate-300">
+                               • 結合語錄：${selectedQuotes.length} 則<br>
+                               • 聚焦關鍵字：${selectedKws.join(', ') || '無'}<br>
+                               • 預測風格：<span class="text-white font-bold">${tone}</span>
+                           </div>`;
+            } else {
+                let genre = "抒情 Ballad";
+                if (tone === "勵志/突破") genre = "輕搖滾 Rock";
+                if (tone === "療癒/溫柔") genre = "Acoustic / Soul";
+
+                let musicInfo = selectedMusic.length > 0 ? `<br>• 音樂參考：${selectedMusic.length} 首 (VIP)` : "";
+
+                content = `<div class="text-pink-300 font-bold mb-1">🎵 音樂生成預覽：</div>
+                           <div class="text-slate-300">
+                               • 歌詞核心：${selectedKws.join(' / ') || '自由發揮'}<br>
+                               • 靈感來源：${selectedQuotes.length > 0 ? '名言語錄' : '純粹心情'}<br>
+                               • 建議曲風：<span class="text-white font-bold">${genre}</span>${musicInfo}
+                           </div>`;
+            }
+            area.innerHTML = content;
+        }
+
+        function generateCopywriting() {
+            const selectedQuotes = Array.from(document.querySelectorAll(`input[name="copyQuote"]:checked`)).map(cb => cb.value);
+            const selectedKws = Array.from(document.querySelectorAll(`input[name="copyKw"]:checked`)).map(cb => cb.value);
+
+            if (selectedQuotes.length === 0 || selectedKws.length === 0) {
+                showToast("請務必在步驟 1 與步驟 2 各選擇至少一項素材");
+                return;
+            }
+
+            const outputBox = document.getElementById('copywritingOutput');
+            const textBox = document.getElementById('copywritingText');
+            
+            const now = new Date();
+            const todayKey = now.toISOString().split('T')[0];
+            const entry = diaryEntries[todayKey] || { text: "今天的心情...", mood: "平靜" }; 
+            
+            // Determine Mood Category
+            const isPositive = ['喜', '被愛', '嚮往', '欲望'].includes(entry.mood);
+            
+            // Generate distinct templates based on keyword combination
+            let comboKey = selectedKws.join("|") + (entry.mood || "");
+            let hash = 0;
+            for (let i = 0; i < comboKey.length; i++) {
+                hash = comboKey.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            let templateIndex = Math.abs(hash) % 4; // 4 distinct styles
+
+            let content = "";
+            let k1 = selectedKws[0];
+            let k2 = selectedKws[1] || selectedKws[0];
+            let q = selectedQuotes[0];
+            let diaryExcerpt = entry.text.length > 50 ? entry.text.substring(0, 50) + "..." : entry.text;
+
+            if (templateIndex === 0) {
+                // Style 1: 標籤導向 (Tag Driven) - 適合 IG
+                content = `【關於 #${k1} 】\n\n今天的心情是 ${entry.mood}。\n\n${diaryExcerpt}\n\n最近深刻體會到：\n"${q}"\n\n願我們都能在生活中找到${k2}的答案。\n\n#Momu #自我成長 #${k1}`;
+            } else if (templateIndex === 1) {
+                // Style 2: 語錄導向 (Quote Driven) - 適合 FB/Threads
+                content = `"${q}"\n\n讀到這句話時，心裡很有感觸。\n\n回顧今天發生的一切：\n${entry.text}\n\n或許這就是所謂的「${k1}」吧。接受當下的${entry.mood}，繼續前行。\n\n#心情日記 #Momu #${k2}`;
+            } else if (templateIndex === 2) {
+                // Style 3: 極簡心情 (Minimalist) - 適合限動
+                content = `📅 ${todayKey} | Mood: ${entry.mood}\n\n關鍵字：${selectedKws.join(' / ')}\n\n📝 隨筆：\n${diaryExcerpt}\n\n✨ 靈感：\n${q}\n\n#DailyLog #Momu`;
+            } else {
+                // Style 4: 敘事反思 (Narrative) - 通用
+                content = `有些日子，特別值得被記錄。\n\n關於「${k1}」，我今天有了新的想法。\n\n${entry.text}\n\n就像那句老話說的：${q}\n\n希望明天的我，能比今天更懂得${k2}。\n\n#生活碎片 #Momu`;
+            }
+
+            textBox.innerText = content;
+            outputBox.classList.remove('hidden');
+            showToast("社群貼文已生成 (可點擊編輯)");
+        }
+
+        // Updated generateMusicLyrics with Membership Logic and Variance
+        function generateMusicLyrics() {
+            const selectedQuotes = Array.from(document.querySelectorAll(`input[name="musicQuote"]:checked`)).map(cb => cb.value);
+            const selectedKws = Array.from(document.querySelectorAll(`input[name="musicKw"]:checked`)).map(cb => cb.value);
+            const selectedMusic = Array.from(document.querySelectorAll(`input[name="musicTrack"]:checked`)).map(cb => cb.value);
+
+            // Membership Check
+            if (selectedQuotes.length > 0 && selectedKws.length > 0 && selectedMusic.length > 0) {
+                alert("系統提示：您還不是會員，無法使用進階生成功能（包含音樂參考）。");
+                return;
+            }
+
+            if (selectedQuotes.length === 0 || selectedKws.length === 0) {
+                showToast("請務必在步驟 1 與步驟 2 各選擇至少一項素材");
+                return;
+            }
+
+            const outputBox = document.getElementById('musicOutput');
+            const textBox = document.getElementById('musicText');
+            
+            // Logic to vary lyrics based on keyword combination order
+            let comboKey = selectedKws.join("-");
+            let hash = 0;
+            for (let i = 0; i < comboKey.length; i++) {
+                hash = comboKey.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            let templateIndex = Math.abs(hash) % 4; // 4 basic templates now
+
+            let lyrics = "";
+            let k1 = selectedKws[0] || "心跳";
+            let k2 = selectedKws[1] || "瞬間";
+            let q = selectedQuotes[0] ? `"${selectedQuotes[0].substring(0, 12)}..."` : "";
+
+            if (templateIndex === 0) {
+                // Template A (Standard Pop - Ballad)
+                lyrics = `(Verse)\n窗外的光線 照亮了${k1}\n我試著去聽見 內心的語言\n${q}\n這世界太吵雜 讓人疲倦\n\n(Bridge)\n也許這條路 有點遙遠\n但我相信 終點會有藍天\n擁抱${k2} 直到永遠`;
+            } else if (templateIndex === 1) {
+                // Template B (Rhythmic/Short - Rap/Trap)
+                lyrics = `(Verse)\n${k1} 在跳動\n節奏 太衝動\n我不想要 再被動\n${q}\n\n(Bridge)\n打破 沉默 的枷鎖\n${k2} 是我 唯一的 承諾`;
+            } else if (templateIndex === 2) {
+                // Template C (Sentimental - Acoustic)
+                lyrics = `(Verse)\n安靜的夜 適合${k1}\n把舊照片 再翻閱一遍\n${q}\n回憶像落葉 鋪滿了昨天\n\n(Bridge)\n如果${k2} 是一種錯覺\n我也願意 閉上眼 去感覺`;
+            } else {
+                 // Template D (Upbeat - Rock/Pop)
+                 lyrics = `(Verse)\n不想再等待 ${k1} 的到來\n大聲喊出來 趁現在\n${q}\n這是我的舞台 我自己主宰\n\n(Bridge)\n就算受傷 也不會停擺\n為了 ${k2} 我會站起來`;
+            }
+
+            textBox.innerText = lyrics;
+            outputBox.classList.remove('hidden');
+            showToast("主歌橋段已生成 (可點擊編輯)");
+        }
+
+        function saveMusicCreation() {
+            // Get content from editable div
+            const content = document.getElementById('musicText').innerText;
+            if (!content) return;
+            
+            const today = new Date().toISOString().split('T')[0];
+            const newRecord = {
+                date: today,
+                text: content,
+                type: 'lyrics'
+            };
+            
+            creationRecords.unshift(newRecord);
+            localStorage.setItem('soul_spectrum_creations', JSON.stringify(creationRecords));
+            
+            showToast("已儲存至心境共振");
+            switchAITab(0); // Auto-switch to Music Resonance tab
+        }
+
+        // New function for saving copywriting creations
+        function saveCopywritingCreation() {
+             const content = document.getElementById('copywritingText').innerText;
+            if (!content) return;
+            
+            const today = new Date().toISOString().split('T')[0];
+            const newRecord = {
+                date: today,
+                text: content,
+                type: 'copywriting'
+            };
+            
+            copywritingRecords.unshift(newRecord);
+            localStorage.setItem('soul_spectrum_copywriting', JSON.stringify(copywritingRecords));
+            
+            showToast("已儲存至心境共振");
+            switchAITab(0); // Auto-switch to Music Resonance tab to show results
+        }
+
+        function copyText(elementId) {
+            // Copy from editable div
+            const text = document.getElementById(elementId).innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                showToast("內容已複製到剪貼簿");
+            });
+        }
+
+        function renderAssetsFolderStructure() {
+            const list = document.getElementById('dbList');
+            
+            const now = new Date();
+            const currentMonthPrefix = now.toISOString().slice(0, 7); 
+            let moodCounts = {};
+            let eventCounts = {};
+            let totalEntries = 0;
+
+            Object.values(diaryEntries).forEach(entry => {
+                if (entry.date.startsWith(currentMonthPrefix)) {
+                    totalEntries++;
+                    if (entry.mood) moodCounts[entry.mood] = (moodCounts[entry.mood] || 0) + 1;
+                    if (entry.event) eventCounts[entry.event] = (eventCounts[entry.event] || 0) + 1;
+                }
+            });
+
+            const sortedEvents = Object.entries(eventCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4)
+                .map(item => item[0]);
+
+            let statsHTML = `
+                <div class="mb-4 border-b border-slate-700 pb-4">
+                    <div class="core-section-title">本月心情量表</div>
+                    <div class="mb-4">
+                        <div class="text-[9px] text-slate-400 mb-1 flex justify-between">
+                            <span>心情分佈</span>
+                            <span>${totalEntries} 則紀錄</span>
+                        </div>
+                        <div class="flex h-3 rounded-full overflow-hidden w-full bg-slate-800">
+                            ${Object.entries(moodCounts).map(([m, count]) => `
+                                <div style="width: ${(count/totalEntries)*100}%; background-color: ${moodConfig[m]};" title="${m}: ${count}"></div>
+                            `).join('')}
+                            ${totalEntries === 0 ? '<div class="w-full bg-slate-700 text-[8px] text-center text-slate-500 pt-0.5">無數據</div>' : ''}
+                        </div>
+                    </div>
+                    <div class="space-y-1 mt-3">
+                        ${sortedEvents.length > 0 ? sortedEvents.map(evt => {
+                            const count = eventCounts[evt];
+                            const percent = (count / totalEntries) * 100;
+                            return `
+                                <div class="stat-row">
+                                    <div class="stat-label text-right truncate">${evt}</div>
+                                    <div class="stat-track">
+                                        <div class="stat-value" style="width: ${percent}%"></div>
+                                    </div>
+                                    <div class="w-4 text-right">${count}</div>
+                                </div>
+                            `;
+                        }).join('') : '<div class="text-[10px] text-slate-500 text-center">本月尚無事件紀錄</div>'}
+                    </div>
+                </div>
+            `;
+
+            let data = databases.storage[0] || [];
+            data = data.filter(item => item.type !== 'music');
+
+            let foldersHTML = '';
+            if (data.length === 0) {
+                foldersHTML = `<div class="text-[10px] text-slate-500 py-10 text-center">暫無日記存檔</div>`;
+            } else {
+                const groups = {};
+                data.forEach(item => {
+                    const date = new Date(item.date);
+                    const monthKey = `${date.getFullYear()}年${date.getMonth() + 1}月`;
+                    
+                    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+                    const dayOfWeek = firstDay.getDay();
+                    const dayOfMonth = date.getDate();
+                    const adjustedDate = dayOfMonth + dayOfWeek;
+                    const weekNum = Math.ceil(adjustedDate / 7);
+                    const weekKey = `第 ${weekNum} 週`;
+
+                    if (!groups[monthKey]) groups[monthKey] = {};
+                    if (!groups[monthKey][weekKey]) groups[monthKey][weekKey] = [];
+                    groups[monthKey][weekKey].push(item);
+                });
+
+                for (const month in groups) {
+                    foldersHTML += `
+                        <div class="mb-2">
+                            <div class="folder-header bg-indigo-900 p-2 rounded text-xs font-bold text-indigo-200 flex justify-between items-center" onclick="toggleFolder(this)">
+                                ${month}
+                                <span class="folder-arrow">▶</span>
+                            </div>
+                            <div class="folder-content pl-2 mt-1">
+                    `;
+                    for (const week in groups[month]) {
+                        foldersHTML += `
+                            <div class="mb-1">
+                                <div class="folder-header bg-slate-800 p-2 rounded text-[11px] text-slate-300 flex justify-between items-center border border-slate-700" onclick="toggleFolder(this)">
+                                    ${week}
+                                    <span class="folder-arrow text-[9px]">▶</span>
+                                </div>
+                                <div class="folder-content pl-2 mt-1 space-y-2">
+                                    ${groups[month][week].map(item => `
+                                        <div class="bg-slate-700 p-2 rounded text-[10px] border-l-2 border-indigo-400 cursor-pointer hover:bg-slate-600 transition-colors" onclick="loadEntryByDate('${item.date}'); event.stopPropagation();">
+                                            <div class="text-indigo-200 mb-0.5">${item.date}</div>
+                                            <div class="text-slate-300">${item.text}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    foldersHTML += `</div></div>`;
+                }
+            }
+            list.innerHTML = statsHTML + foldersHTML;
+        }
+
+        function toggleFolder(el) {
+            el.nextElementSibling.classList.toggle('open');
+            el.querySelector('.folder-arrow').classList.toggle('open');
+        }
+
+        function renderInspirationPanel() {
+            const list = document.getElementById('dbList');
+            const data = databases.storage[1] || [];
+
+            const extractedKeywords = savedWeeklyAnalysis.keywords.length > 0 ? savedWeeklyAnalysis.keywords : currentKeywords;
+            const manualTags = databases.storage[2] ? databases.storage[2].filter(t => t.type === 'core_tag') : [];
+
+            let topHTML = `
+                <div class="mb-4 border-b border-slate-700 pb-4">
+                    <div class="core-section-title">AI 核心關鍵字 (Top 4)</div>
+                    <div class="mb-4 flex flex-wrap">
+                        ${extractedKeywords.length > 0 ? extractedKeywords.map(kw => `
+                            <span class="tag-chip tag-auto">#${kw}</span>
+                        `).join('') : '<span class="text-[10px] text-slate-500">累積數據後顯示</span>'}
+                    </div>
+
+                    <div class="flex justify-end mb-1">
+                        <span class="text-[10px] font-bold text-indigo-300">自定義目標 (${manualTags.length}/4)</span>
+                    </div>
+                    
+                    ${manualTags.length < 4 ? `
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" id="manualTagInput" placeholder="輸入省思/目標..." 
+                                class="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-indigo-500">
+                            <button onclick="addManualTag()" class="bg-indigo-600 text-white text-xs px-2 rounded hover:bg-indigo-500">+</button>
+                        </div>
+                    ` : ''}
+
+                    <div class="flex flex-wrap justify-end">
+                        ${manualTags.map((tag, idx) => `
+                            <span class="tag-chip tag-manual">
+                                #${tag.text}
+                                <span class="tag-delete" onclick="deleteManualTag(${idx})">×</span>
+                            </span>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            let listHTML = `
+                <div class="core-section-title-amber mt-6">語錄收藏</div>
+                <div class="space-y-3 pb-4">
+            `;
+            
+            if (data.length === 0) {
+                listHTML += `<div class="text-[10px] text-slate-500 py-4 text-center">暫無收藏語錄</div>`;
+            } else {
+                const groups = {};
+                data.forEach(item => {
+                    const date = new Date(item.date);
+                    const monthKey = `${date.getFullYear()}年${date.getMonth() + 1}月`;
+                    if (!groups[monthKey]) groups[monthKey] = [];
+                    groups[monthKey].push(item);
+                });
+
+                for (const month in groups) {
+                    listHTML += `
+                        <div class="mb-2">
+                            <div class="folder-header bg-slate-800 p-2 rounded text-xs text-amber-400 font-bold flex justify-between items-center border border-slate-700" onclick="toggleFolder(this)">
+                                ${month} (收藏: ${groups[month].length})
+                                <span class="folder-arrow">▶</span>
+                            </div>
+                            <div class="folder-content pl-1 mt-1 space-y-2">
+                                ${groups[month].map(item => `
+                                    <div class="bg-slate-700 p-2 rounded border border-slate-600 relative group">
+                                        <div class="text-[9px] text-slate-400 mb-1">${item.date}</div>
+                                        <div class="text-[11px] text-slate-200 italic leading-relaxed">${item.text}</div>
+                                        ${item.type === 'custom_quote' ? '<div class="text-[9px] text-amber-500/70 mt-1 text-right">✨ 自訂</div>' : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            listHTML += '</div>';
+
+            let bottomHTML = `
+                <div class="mt-2 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-900 shadow-xl">
+                    <div class="text-[10px] font-bold text-amber-400 mb-2 text-right">記錄我的靈感金句</div>
+                    <div class="flex gap-2">
+                        <textarea id="customQuoteInput" rows="2" placeholder="寫下對你充滿意義的一句話..." 
+                            class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-amber-500 resize-none"></textarea>
+                    </div>
+                    <button onclick="saveCustomQuote()" class="w-full mt-2 bg-amber-600 hover:bg-amber-700 text-white text-xs py-2 rounded-lg font-bold transition-colors shadow-md active:scale-95">
+                        儲存自訂語錄
+                    </button>
+                </div>
+            `;
+
+            list.innerHTML = topHTML + listHTML + bottomHTML;
+        }
+
+        function saveCustomQuote() {
+            const input = document.getElementById('customQuoteInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const today = new Date().toISOString().split('T')[0];
+            const newItem = {
+                date: today,
+                text: `「${text}」`,
+                type: 'custom_quote'
+            };
+
+            if (!databases.storage[1]) databases.storage[1] = [];
+            databases.storage[1].unshift(newItem); 
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            
+            input.value = '';
+            renderInspirationPanel();
+            showToast("已儲存您的靈感金句");
+        }
+
+        function addManualTag() {
+            const input = document.getElementById('manualTagInput');
+            const val = input.value.trim();
+            if (!val) return;
+
+            if (!Array.isArray(databases.storage[2])) databases.storage[2] = [];
+            
+            if (databases.storage[2].length >= 4) {
+                showToast("最多只能新增 4 個自定義標籤");
+                return;
+            }
+
+            databases.storage[2].push({ type: 'core_tag', text: val });
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            input.value = '';
+            renderInspirationPanel(); 
+        }
+
+        function deleteManualTag(idx) {
+            if (!databases.storage[2]) return;
+            databases.storage[2].splice(idx, 1);
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            renderInspirationPanel(); 
+        }
+
+        function selectMood(mood, color, btn) {
+            currentMood = mood; currentColor = color;
+            document.querySelectorAll('#moodGroup button').forEach(b => b.classList.remove('active-mood'));
+            btn.classList.add('active-mood');
+        }
+
+        function selectEvent(ev, btn) {
+            currentEvent = ev;
+            document.querySelectorAll('#eventGroup button').forEach(b => b.classList.remove('bg-indigo-600', 'text-white'));
+            btn.classList.add('bg-indigo-600', 'text-white');
+        }
+
+        function saveCurrentEntry() {
+            const text = document.getElementById('diaryInput').value;
+            const date = document.getElementById('recordDate').value;
+            if (!currentMood || !text) { showToast("請選擇心情並填寫內容"); return; }
+            diaryEntries[date] = { mood: currentMood, color: currentColor, text, date, event: currentEvent };
+            localStorage.setItem('soul_spectrum_entries', JSON.stringify(diaryEntries));
+            
+            // Sync to Mood Assets Storage (databases.storage[0]) for list visibility
+            if (!databases.storage[0]) databases.storage[0] = [];
+            const newAssetItem = {
+                date: date,
+                text: text.substring(0, 30) + (text.length > 30 ? "..." : ""),
+                type: 'diary_log'
+            };
+            // Check if entry already exists to update instead of dup
+            const existingIndex = databases.storage[0].findIndex(item => item.date === date && item.type === 'diary_log');
+            if (existingIndex > -1) {
+                databases.storage[0][existingIndex] = newAssetItem;
+            } else {
+                databases.storage[0].unshift(newAssetItem);
+            }
+            // Sort by date descending
+            databases.storage[0].sort((a,b) => new Date(b.date) - new Date(a.date));
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+
+            refreshQuote(); 
+            showToast("紀錄已存入心情資產");
+            generateSpectrum();
+            renderCalendar();
+            updateEntryCount();
+            
+            // Re-calculate analysis for current week to ensure data integrity
+            analyzeWeeklyMood();
+            
+            // Force UI update if panel is open
+            if(databases.currentIdx === 0) renderAssetsFolderStructure();
+        }
+
+        function recommendMusic() {
+            if (!currentMood) { showToast("請先選擇今日心情"); return; }
+            const panel = document.getElementById('musicRecommendPanel');
+            const recs = musicBank[currentMood] || musicBank['喜'];
+            const sel = recs[0];
+            panel.classList.remove('hidden');
+            document.getElementById('songName').innerText = sel.song;
+            document.getElementById('artistName').innerText = sel.artist;
+            document.getElementById('recommendReason').innerText = sel.reason;
+            showToast("音樂評估完成");
+        }
+
+        // Updated: Analyze Weekly Mood based on TARGET DATE with Deterministic Keywords
+        function analyzeWeeklyMood(targetDate = null) {
+            let entriesToAnalyze = [];
+            
+            // Calculate start/end of week for the target date
+            let refDate = targetDate ? new Date(targetDate) : new Date();
+            const day = refDate.getDay();
+            const diff = refDate.getDate() - day; 
+            const startOfWeek = new Date(refDate.setDate(diff));
+            startOfWeek.setHours(0,0,0,0);
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 6);
+            endOfWeek.setHours(23,59,59,999);
+
+            // Create a unique seed for this specific week (e.g. "2026-W05")
+            const weekSeed = `${startOfWeek.getFullYear()}-W${Math.ceil((((startOfWeek - new Date(startOfWeek.getFullYear(),0,1)) / 86400000) + 1)/7)}`;
+
+            // Filter entries
+            const entries = Object.values(diaryEntries);
+            entriesToAnalyze = entries.filter(e => {
+                const d = new Date(e.date);
+                return d >= startOfWeek && d <= endOfWeek;
+            });
+            
+            // Strict check: Less than 7 days -> No Analysis
+            if (entriesToAnalyze.length < 7) {
+                 if(targetDate || true) { // Always show this status
+                     document.getElementById('aiComment').innerText = "需累積滿 7 天日記，方可生成週總評。";
+                     document.getElementById('keywordTags').innerHTML = "";
+                     currentKeywords = []; // Clear keywords for creation tool
+                     return;
+                 }
+            }
+
+            // Analysis Logic
+            let negCount = 0;
+            let allText = "";
+            const negativeMoods = ['怒', '哀', '無人理解'];
+            
+            // Sort entries by date to ensure deterministic text concatenation
+            entriesToAnalyze.sort((a,b) => new Date(a.date) - new Date(b.date));
+
+            entriesToAnalyze.forEach(entry => {
+                if (negativeMoods.includes(entry.mood)) negCount++;
+                allText += entry.text + " ";
+            });
+
+            let response = "";
+            const isNegativeWeek = negCount > (entriesToAnalyze.length / 2); 
+
+            const wittyJokes = [
+                "這週有點水逆？沒事，這週的運氣都拿去抵銷水逆了，下週準備起飛！🚀",
+                "這週的混亂程度簡直可以寫成八點檔了，但你是主角，主角都有主角光環的，撐住！",
+                "生活給你檸檬，你就把它榨汁...然後加點龍舌蘭做成調酒！乾杯！🍸",
+                "這週有點 emo？沒關係，emo 是為了讓下次快樂更顯眼。就像薯條加鹽更好吃一樣。",
+                "如果不順利，就當作是命運在幫你累積「反擊」的能量條！",
+                "這週的狀態就像Wifi訊號不穩，連線中斷沒關係，重開機就好了！"
+            ];
+
+            const wittyAffirmations = [
+                "這週狀態開掛了吧？是被外星人附身還是中了樂透？繼續保持這種可怕的順利！",
+                "看你的紀錄，這週簡直是人生贏家組別的。記得分點好運給我這個 AI 啊！",
+                "這週過得太順了，我都懷疑你是不是偷看了劇本？做得好！",
+                "這能量場太強了，隔著螢幕我都感覺到你的光芒，請受小弟一拜！🙇",
+                "這種穩定輸出的節奏，簡直是教科書級別的完美一週！"
+            ];
+            
+            // Use weekSeed for deterministic random selection
+            let seedVal = 0;
+            for(let i=0; i<weekSeed.length; i++) seedVal += weekSeed.charCodeAt(i);
+            
+            if (entriesToAnalyze.length > 0) {
+                if (isNegativeWeek) {
+                    response = wittyJokes[seedVal % wittyJokes.length];
+                } else {
+                    response = wittyAffirmations[seedVal % wittyAffirmations.length];
+                }
+            } else {
+                 response = "累積更多日記，讓我更了解你吧！";
+            }
+
+            const keywords = extractRealKeywords(allText);
+            
+            // Update global currentKeywords (This is what creation tools read)
+            currentKeywords = keywords; 
+
+            document.getElementById('aiComment').innerText = response;
+            document.getElementById('keywordTags').innerHTML = keywords.map(k => 
+                `<span class="bg-indigo-50 text-indigo-500 text-[10px] px-2 py-1 rounded">#${k}</span>`
+            ).join('');
+            
+            if(!targetDate) showToast("AI 週總評生成完畢");
+        }
+
+        function generateKeywords() {
+            analyzeWeeklyMood();
+        }
+
+        function refreshQuote() {
+            const q = quoteBank[Math.floor(Math.random()*quoteBank.length)];
+            document.getElementById('quoteText').innerText = q.text;
+            document.getElementById('quoteAuthor').innerText = `— ${q.author}`;
+        }
+
+        function debugSimulateOneDay() {
+            const d = document.getElementById('recordDate').value;
+            const moods = Object.keys(moodConfig);
+            const m = moods[Math.floor(Math.random()*moods.length)];
+            const events = ['健康', '人際', '事業/學業', '成長/成就', '興趣/創作', '生活雜項', '價值/信念'];
+            const ev = events[Math.floor(Math.random()*events.length)];
+            
+            const isPositive = ['喜', '被愛', '嚮往', '欲望'].includes(m);
+            const sentencePool = isPositive ? diarySentences.positive : diarySentences.negative;
+            const text = sentencePool[Math.floor(Math.random()*sentencePool.length)];
+
+            diaryEntries[d] = { mood: m, color: moodConfig[m], text: text, date: d, event: ev };
+            localStorage.setItem('soul_spectrum_entries', JSON.stringify(diaryEntries));
+            
+            // Sync to Mood Assets (Same as saveCurrentEntry)
+            if (!databases.storage[0]) databases.storage[0] = [];
+            const newAssetItem = {
+                date: d,
+                text: text.substring(0, 30) + "...",
+                type: 'diary_log'
+            };
+            const existingIndex = databases.storage[0].findIndex(item => item.date === d && item.type === 'diary_log');
+            if (existingIndex > -1) {
+                databases.storage[0][existingIndex] = newAssetItem;
+            } else {
+                databases.storage[0].unshift(newAssetItem);
+            }
+            databases.storage[0].sort((a,b) => new Date(b.date) - new Date(a.date));
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            
+            generateSpectrum();
+            renderCalendar();
+            loadEntryByDate(d);
+            updateEntryCount();
+            
+            if(databases.currentIdx === 0) renderAssetsFolderStructure();
+            
+            showToast("已模擬今日擬真數據");
+        }
+
+        function debugSimulateFullMonth() {
+            const moods = Object.keys(moodConfig);
+            const events = ['健康', '人際', '事業/學業', '成長/成就', '興趣/創作', '生活雜項', '價值/信念'];
+            
+            for(let i=1; i<=28; i++) { 
+                const d = `2026-01-${String(i).padStart(2,'0')}`;
+                const m = moods[Math.floor(Math.random()*moods.length)];
+                const ev = events[Math.floor(Math.random()*events.length)];
+                
+                const isPositive = ['喜', '被愛', '嚮往', '欲望'].includes(m);
+                const sentencePool = isPositive ? diarySentences.positive : diarySentences.negative;
+                const text = sentencePool[Math.floor(Math.random()*sentencePool.length)];
+                
+                diaryEntries[d] = { mood: m, color: moodConfig[m], text: text, date: d, event: ev };
+            }
+            localStorage.setItem('soul_spectrum_entries', JSON.stringify(diaryEntries));
+            
+            databases.storage[0] = []; 
+            for(let i=1; i<=28; i++) {
+                 const d = `2026-01-${String(i).padStart(2,'0')}`;
+                 databases.storage[0].push({
+                     date: d,
+                     text: diaryEntries[d].text.substring(0, 20) + "...",
+                     type: 'diary_log'
+                 });
+            }
+            databases.storage[0].sort((a,b) => new Date(b.date) - new Date(a.date));
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+
+            generateSpectrum();
+            renderCalendar();
+            updateDatabaseUI();
+            updateEntryCount();
+            showToast("已模擬一個月擬真數據與歸檔");
+        }
+        
+        // 補上遺失的儲存函式
+        function saveSummaryToDatabase(dbIdx) {
+            const comment = document.getElementById('aiComment').innerText;
+            const today = new Date().toISOString().split('T')[0];
+            const newItem = {
+                date: today,
+                text: `[週報] ${comment}`,
+                type: 'report'
+            };
+            
+            if (!databases.storage[dbIdx]) databases.storage[dbIdx] = [];
+            databases.storage[dbIdx].unshift(newItem);
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            updateDatabaseUI();
+            showToast("週報告已存入心情資產");
+        }
+
+        function saveQuoteToDatabase(dbIdx) {
+            const text = document.getElementById('quoteText').innerText;
+            const author = document.getElementById('quoteAuthor').innerText;
+            const today = new Date().toISOString().split('T')[0];
+            
+             const newItem = {
+                date: today,
+                text: `[語錄] ${text} ${author}`,
+                type: 'quote'
+            };
+            
+            if (!databases.storage[dbIdx]) databases.storage[dbIdx] = [];
+            databases.storage[dbIdx].unshift(newItem);
+            localStorage.setItem('soul_spectrum_db', JSON.stringify(databases));
+            updateDatabaseUI();
+            showToast("語錄已存入核心價值");
+        }
+
+        function saveMusicToAsset() {
+            const song = document.getElementById('songName').innerText;
+            const artist = document.getElementById('artistName').innerText;
+            const today = new Date().toISOString().split('T')[0];
+            
+            const newItem = {
+                date: today,
+                text: `${song} - ${artist}`,
+                type: 'music'
+            };
+            
+            energyAssets.unshift(newItem);
+            localStorage.setItem('soul_spectrum_energy_assets', JSON.stringify(energyAssets));
+            
+            const activeTab = document.querySelector('.ai-active-tab');
+            if (activeTab && activeTab.id === 'aiTab0') {
+                switchAITab(0);
+            }
+            
+            showToast("音樂已存入心境共振");
+        }
+
+        // New function to handle music feedback toggle (visual only)
+        function toggleMusicFeedback(btn, type) {
+             const parent = btn.parentElement;
+             const buttons = parent.querySelectorAll('button');
+             
+             // Check if already active to toggle off
+             const isActive = type === 'like' ? btn.classList.contains('text-pink-400') : btn.classList.contains('text-indigo-400');
+             
+             // Reset all
+             buttons.forEach(b => {
+                 b.classList.remove('text-pink-400', 'text-indigo-400', 'font-bold', 'bg-white/10');
+                 b.classList.add('text-slate-400');
+             });
+             
+             if (!isActive) {
+                 btn.classList.remove('text-slate-400');
+                 btn.classList.add(type === 'like' ? 'text-pink-400' : 'text-indigo-400', 'font-bold', 'bg-white/10');
+                 showToast(type === 'like' ? "已按讚：將推薦更多類似風格" : "已回饋：將減少推薦此類風格");
+             }
+        }
+    </script>
+</body>
+</html>
+
